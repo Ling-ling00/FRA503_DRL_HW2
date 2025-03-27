@@ -28,7 +28,6 @@
 **/.neptune/*
 docker/artifacts/
 *.tmp
-Data
 q_value
 
 # Isaac-Sim packman
