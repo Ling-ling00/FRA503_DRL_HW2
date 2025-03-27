@@ -69,6 +69,8 @@ class BaseAlgorithm():
         elif self.control_type == ControlType.DOUBLE_Q_LEARNING:
             self.qa_values = defaultdict(lambda: np.zeros(self.num_of_action))
             self.qb_values = defaultdict(lambda: np.zeros(self.num_of_action))
+            self.na_values = defaultdict(lambda: np.zeros(self.num_of_action))
+            self.nb_values = defaultdict(lambda: np.zeros(self.num_of_action))
 
     def discretize_state(self, obs: dict):
         """
@@ -85,15 +87,27 @@ class BaseAlgorithm():
         policy_tensor = obs['policy']  # {'policy': tensor([[-0.2300,  0.0700, -0.1187, -0.1686]], device='cuda:0')}
 
         # Extracting the four values
-        pose_cart = policy_tensor[0, 0].item()  # First value
-        pose_pole = policy_tensor[0, 1].item()  # Second value
-        vel_cart = policy_tensor[0, 2].item()   # Third value
-        vel_pole = policy_tensor[0, 3].item()   # Fourth value
+        value = [0,0,0,0]
+        value[0] = policy_tensor[0, 0].item()  # First value
+        value[1] = policy_tensor[0, 1].item()  # Second value
+        value[2] = policy_tensor[0, 2].item()   # Third value
+        value[3] = policy_tensor[0, 3].item()   # Fourth value
+        discrete_value = [0,0,0,0]
 
-        return (int(round(pose_cart * self.discretize_state_weight[0])),
-                int(round(pose_pole * self.discretize_state_weight[1])),
-                int(round(vel_cart * self.discretize_state_weight[2])),
-                int(round(vel_pole * self.discretize_state_weight[3])))
+        bound = [[-3, 3],
+                 [-np.deg2rad(24), np.deg2rad(24)],
+                 [-5, 5],
+                 [-5, 5]]
+
+        for i in range(0,4):
+            value[i] = max(bound[i][0], min(value[i], bound[i][1]))
+            # Compute discrete bin
+            discrete_value[i] = round((value[i] - bound[i][0]) * (self.discretize_state_weight[i] - 1) / (bound[i][1] - bound[i][0])) + 1
+
+        return (discrete_value[0],
+                discrete_value[1],
+                discrete_value[2],
+                discrete_value[3])
         # ======================================#
 
     def get_discretize_action(self, obs_dis) -> int:
@@ -109,6 +123,8 @@ class BaseAlgorithm():
         # ========= put your code here =========#
         if np.random.rand() < self.epsilon:
             return np.random.randint(self.num_of_action)
+        elif self.control_type == ControlType.DOUBLE_Q_LEARNING:
+            return int(np.argmax(self.qa_values[obs_dis]+self.qb_values[obs_dis]))
         return int(np.argmax(self.q_values[obs_dis]))
         # ======================================#
     
@@ -152,6 +168,7 @@ class BaseAlgorithm():
         """
         # ========= put your code here =========#
         self.epsilon = max(self.final_epsilon, self.epsilon * self.epsilon_decay)
+        # self.epsilon = max(self.final_epsilon, self.epsilon - (1-self.epsilon_decay))
         return self.epsilon
         # ======================================#
 
@@ -163,26 +180,53 @@ class BaseAlgorithm():
             path (str): Path to save the model.
             filename (str): Name of the file.
         """
-        # Convert tuple keys to strings
-        try:
-            q_values_str_keys = {str(k): v.tolist() for k, v in self.q_values.items()}
-        except:
-            q_values_str_keys = {str(k): v for k, v in self.q_values.items()}
-        if self.control_type == ControlType.MONTE_CARLO:
+        if self.control_type != ControlType.DOUBLE_Q_LEARNING:
+            # Convert tuple keys to strings
+            try:
+                q_values_str_keys = {str(k): v.tolist() for k, v in self.q_values.items()}
+            except:
+                q_values_str_keys = {str(k): v for k, v in self.q_values.items()}
+            # if self.control_type == ControlType.MONTE_CARLO:
             try:
                 n_values_str_keys = {str(k): v.tolist() for k, v in self.n_values.items()}
             except:
                 n_values_str_keys = {str(k): v for k, v in self.n_values.items()}
-        
-        # Save model parameters to a JSON file
-        if self.control_type == ControlType.MONTE_CARLO:
+            
+            # Save model parameters to a JSON file
+            # if self.control_type == ControlType.MONTE_CARLO:
             model_params = {
                 'q_values': q_values_str_keys,
                 'n_values': n_values_str_keys
             }
+            # else:
+            #     model_params = {
+            #         'q_values': q_values_str_keys,
+            #     }
         else:
+            # Convert tuple keys to strings
+            try:
+                qa_values_str_keys = {str(k): v.tolist() for k, v in self.qa_values.items()}
+            except:
+                qa_values_str_keys = {str(k): v for k, v in self.qa_values.items()}
+            try:
+                qb_values_str_keys = {str(k): v.tolist() for k, v in self.qb_values.items()}
+            except:
+                qb_values_str_keys = {str(k): v for k, v in self.qb_values.items()}    
+            try:
+                na_values_str_keys = {str(k): v.tolist() for k, v in self.na_values.items()}
+            except:
+                na_values_str_keys = {str(k): v for k, v in self.na_values.items()}
+            try:
+                nb_values_str_keys = {str(k): v.tolist() for k, v in self.nb_values.items()}
+            except:
+                nb_values_str_keys = {str(k): v for k, v in self.nb_values.items()}
+            
+            # Save model parameters to a JSON file
             model_params = {
-                'q_values': q_values_str_keys,
+                'qa_values': qa_values_str_keys,
+                'qb_values': qb_values_str_keys,
+                'na_values': na_values_str_keys,
+                'nb_values': nb_values_str_keys
             }
         full_path = os.path.join(path, filename)
         with open(full_path, 'w') as f:
@@ -203,15 +247,27 @@ class BaseAlgorithm():
         full_path = os.path.join(path, filename)        
         with open(full_path, 'r') as file:
             data = json.load(file)
-            data_q_values = data['q_values']
-            for state, action_values in data_q_values.items():
-                state = state.replace('(', '')
-                state = state.replace(')', '')
-                tuple_state = tuple(map(float, state.split(', ')))
-                self.q_values[tuple_state] = action_values.copy()
-                if self.control_type == ControlType.DOUBLE_Q_LEARNING:
+            if self.control_type == ControlType.DOUBLE_Q_LEARNING:
+                data_qa_values = data['qa_values']
+                data_qb_values = data['qb_values']
+                for state, action_values in data_qa_values.items():
+                    state = state.replace('(', '')
+                    state = state.replace(')', '')
+                    tuple_state = tuple(map(float, state.split(', ')))
                     self.qa_values[tuple_state] = action_values.copy()
+                for state, action_values in data_qb_values.items():
+                    state = state.replace('(', '')
+                    state = state.replace(')', '')
+                    tuple_state = tuple(map(float, state.split(', ')))
                     self.qb_values[tuple_state] = action_values.copy()
+
+            else:
+                data_q_values = data['q_values']
+                for state, action_values in data_q_values.items():
+                    state = state.replace('(', '')
+                    state = state.replace(')', '')
+                    tuple_state = tuple(map(float, state.split(', ')))
+                    self.q_values[tuple_state] = action_values.copy()
             if self.control_type == ControlType.MONTE_CARLO:
                 data_n_values = data['n_values']
                 for state, n_values in data_n_values.items():

@@ -39,7 +39,6 @@ class Double_Q_Learning(BaseAlgorithm):
             final_epsilon=final_epsilon,
             discount_factor=discount_factor,
         )
-        self.q_values2 = defaultdict(lambda: np.zeros(self.num_of_action))
         
     def update(self, state, action, reward, next_state):
         """
@@ -48,12 +47,14 @@ class Double_Q_Learning(BaseAlgorithm):
         This method applies the Double Q-Learning update rule to improve policy decisions by updating the Q-table.
         """
         if np.random.random() < 0.5:
-            # Update Q_1
-            max_next_q_value = np.max(self.q_values2[next_state]) if next_state is not None else 0
-            q_value = self.q_values[state][action]
-            self.q_values[state][action] = q_value + self.lr * (reward + (self.discount_factor * max_next_q_value) - q_value)
+            # Update Q_a
+            max_next_q_value = np.max(self.qb_values[next_state]) if next_state is not None else 0
+            q_value = self.qa_values[state][action]
+            self.qa_values[state][action] = q_value + self.lr * (reward + (self.discount_factor * max_next_q_value) - q_value)
+            self.na_values[state][action] += 1
         else:
-            # Update Q_2
-            max_next_q_value = np.max(self.q_values[next_state]) if next_state is not None else 0
-            q_value = self.q_values2[state][action]
-            self.q_values2[state][action] = q_value + self.lr * (reward + (self.discount_factor * max_next_q_value) - q_value)
+            # Update Q_b
+            max_next_q_value = np.max(self.qa_values[next_state]) if next_state is not None else 0
+            q_value = self.qb_values[state][action]
+            self.qb_values[state][action] = q_value + self.lr * (reward + (self.discount_factor * max_next_q_value) - q_value)
+            self.nb_values[state][action] += 1

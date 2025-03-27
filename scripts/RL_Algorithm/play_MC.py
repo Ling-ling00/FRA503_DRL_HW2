@@ -84,15 +84,15 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # ==================================================================== #
     # ========================= Can be modified ========================== #
 
-    num_of_action = 20
-    action_range = [-10, 10]  # [min, max]
-    discretize_state_weight = [50, 50, 10, 10]  # [pose_cart:int, pose_pole:int, vel_cart:int, vel_pole:int]
+    num_of_action = 11
+    action_range = [-15, 15]  # [min, max]
+    discretize_state_weight = [1, 21, 21, 1]  # [pose_cart:int, pose_pole:int, vel_cart:int, vel_pole:int]
     learning_rate = 0.1
-    n_episodes = 1000
-    start_epsilon = 1.0
-    epsilon_decay = 0.99995 # reduce the exploration over time
-    final_epsilon = 0.1
-    discount = 0.99
+    n_episodes = 5000
+    start_epsilon = 0
+    epsilon_decay = 0.9995 # reduce the exploration over time
+    final_epsilon = 0
+    discount = 0.7
 
     agent = MC(
         num_of_action=num_of_action,
@@ -105,9 +105,10 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         discount_factor=discount
     )
 
+    task_name = str(args_cli.task).split('-')[0]  # Stabilize, SwingUp
     Algorithm_name = "MC"  
-    q_value_file = "name.json"
-    full_path = os.path.join("q_value", Algorithm_name)
+    q_value_file = "Part3/a_11_s_21/MC_4900_11_15_1_21.json"
+    full_path = os.path.join(f"q_value/{task_name}", Algorithm_name)
     agent.load_q_value(full_path, q_value_file)
 
     # reset environment

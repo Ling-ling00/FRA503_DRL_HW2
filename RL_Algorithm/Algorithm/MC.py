@@ -40,20 +40,22 @@ class MC(BaseAlgorithm):
             discount_factor=discount_factor,
         )
         
-    def update(self, state_history, action_history, reward_history):
+    def update(self):
         """
         Update Q-values using Monte Carlo.
 
         This method applies the Monte Carlo update rule to improve policy decisions by updating the Q-table.
         """
         G = 0
-
-        for t in reversed(range(len(reward_history))):
-            state = state_history[t]
-            action = int(action_history[t])
-            G = reward_history[t] + self.discount_factor * G
+        for t in reversed(range(len(self.reward_hist))):
+            state = self.obs_hist[t]
+            action = int(self.action_hist[t])
+            G = self.reward_hist[t] + self.discount_factor * G
 
             # Check if the state-action pair is first visit
-            if state not in state_history[:t]:
+            if state not in self.obs_hist[:t]:
                 self.q_values[state][action] = ((self.q_values[state][action] * (self.n_values[state][action])) + G) / (self.n_values[state][action] + 1)
                 self.n_values[state][action] += 1
+        self.obs_hist = []
+        self.action_hist = []
+        self.reward_hist = []

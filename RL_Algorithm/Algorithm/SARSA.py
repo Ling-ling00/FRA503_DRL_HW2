@@ -48,3 +48,4 @@ class SARSA(BaseAlgorithm):
         q_value = self.q_values[state][action]
         next_q_value = self.q_values[next_state][next_action] if next_state is not None else 0
         self.q_values[state][action] = q_value + self.lr*(reward + (self.discount_factor * next_q_value) - q_value)
+        self.n_values[state][action] += 1

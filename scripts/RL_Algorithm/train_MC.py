@@ -13,6 +13,11 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")
 from RL_Algorithm.Algorithm.MC import MC
 from tqdm import tqdm
 
+from collections import deque
+import yaml
+
+import wandb
+
 # add argparse arguments
 parser = argparse.ArgumentParser(description="Train an RL agent with RSL-RL.")
 parser.add_argument("--video", action="store_true", default=False, help="Record videos during training.")
@@ -105,15 +110,18 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # ========================= Can be modified ========================== #
 
     # hyperparameters
-    num_of_action = 20
-    action_range = [-10, 10]  # [min, max]
-    discretize_state_weight = [50, 50, 10, 10]  # [pose_cart:int, pose_pole:int, vel_cart:int, vel_pole:int]
+    num_of_action = 11
+    action_range = [-15, 15]  # [min, max]
+    discretize_state_weight = [1, 21, 21, 1]  # [pose_cart:int, pose_pole:int, vel_cart:int, vel_pole:int]
     learning_rate = 0.1
-    n_episodes = 1000
+    n_episodes = 5000
     start_epsilon = 1.0
-    epsilon_decay = 0.999 # reduce the exploration over time
+    epsilon_decay = 0.9995 # reduce the exploration over time
     final_epsilon = 0.1
-    discount = 0.99
+    discount = 0.7
+
+    task_name = str(args_cli.task).split('-')[0]  # Stabilize, SwingUp
+    Algorithm_name = "MC"
 
     agent = MC(
         num_of_action=num_of_action,
@@ -124,6 +132,16 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         epsilon_decay=epsilon_decay,
         final_epsilon=final_epsilon,
         discount_factor=discount
+    )
+
+    moving_avg_window = deque(maxlen=100)  # For smoothing rewards
+    moving_avg_window2 = deque(maxlen=100) # For smoothing step
+
+    # Start a new wandb run to track this script.
+    wandb.init(
+        # Set the wandb project where this run will be logged.
+        project="DRL_HW2_3",
+        name="MC_a_11_s_21"
     )
 
     # reset environment
@@ -139,9 +157,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
                 obs, _ = env.reset()
                 done = False
                 cumulative_reward = 0
-                state_history = []
-                action_history = []
-                reward_history = []
+                step = 0
 
                 while not done:
                     # agent stepping
@@ -155,29 +171,44 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
                     cumulative_reward += reward_value
 
                     # Record history for Monte Carlo update
-                    state_history.append(agent.discretize_state(obs))
-                    action_history.append(action_idx)
-                    reward_history.append(reward_value)
+                    agent.obs_hist.append(agent.discretize_state(obs))
+                    agent.action_hist.append(action_idx)
+                    agent.reward_hist.append(reward_value)
 
                     done = terminated or truncated
                     obs = next_obs
+                    step += 1
+
+                # Compute moving average reward
+                moving_avg_window.append(cumulative_reward)
+                moving_avg_reward = sum(moving_avg_window) / len(moving_avg_window)
+
+                moving_avg_window2.append(step)
+                moving_avg_step = sum(moving_avg_window2) / len(moving_avg_window2)
                 
+                wandb.log({
+                    "avg_reward" : moving_avg_reward,
+                    "reward" : cumulative_reward,
+                    "epsilon" : agent.epsilon,
+                    "avg_step" : moving_avg_step,
+                    "step" : step,
+                })
+
                 # Update the agent using Monte Carlo method
-                agent.update(state_history, action_history, reward_history)
+                agent.update()
 
                 sum_reward += cumulative_reward
                 if episode % 100 == 0:
                     print("avg_score: ", sum_reward / 100.0)
                     sum_reward = 0
                     print(agent.epsilon)
+
+                    # Save Q-Learning agent
+                    q_value_file = f"{Algorithm_name}_{episode}_{num_of_action}_{action_range[1]}_{discretize_state_weight[0]}_{discretize_state_weight[1]}.json"
+                    full_path = os.path.join(f"q_value/{task_name}", Algorithm_name, "Part3/a_11_s_21")
+                    agent.save_q_value(full_path, q_value_file)
                 agent.decay_epsilon()
-            
-            # Save Q-Learning agent
-            Algorithm_name = "MC"
-            q_value_file = "name.json"
-            full_path = os.path.join("q_value", Algorithm_name)
-            agent.save_q_value(full_path, q_value_file)
-            
+
         if args_cli.video:
             timestep += 1
             # Exit the play loop after recording one video
@@ -190,6 +221,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # ==================================================================== #
 
     # close the simulator
+    wandb.finish()
     env.close()
 
 if __name__ == "__main__":

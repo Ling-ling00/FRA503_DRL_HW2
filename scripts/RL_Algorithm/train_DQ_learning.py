@@ -16,6 +16,8 @@ from tqdm import tqdm
 from collections import deque
 import yaml
 
+import wandb
+
 # add argparse arguments
 parser = argparse.ArgumentParser(description="Train an RL agent with RSL-RL.")
 parser.add_argument("--video", action="store_true", default=False, help="Record videos during training.")
@@ -108,15 +110,18 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # ========================= Can be modified ========================== #
 
     # hyperparameters
-    num_of_action = 15
-    action_range = [-5, 5]  # [min, max]
-    discretize_state_weight = [10, 10, 5, 5]  # [pose_cart:int, pose_pole:int, vel_cart:int, vel_pole:int]
-    learning_rate = 0.05
-    n_episodes = 10000
+    num_of_action = 3
+    action_range = [-15, 15]  # [min, max]
+    discretize_state_weight = [1, 5, 5, 1]  # [pose_cart:int, pose_pole:int, vel_cart:int, vel_pole:int]
+    learning_rate = 0.1
+    n_episodes = 5000
     start_epsilon = 1.0
-    epsilon_decay = 0.9999 # reduce the exploration over time
+    epsilon_decay = 0.9995 # reduce the exploration over time
     final_epsilon = 0.1
-    discount = 0.95
+    discount = 0.7
+
+    task_name = str(args_cli.task).split('-')[0]  # Stabilize, SwingUp
+    Algorithm_name = "Double_Q_learning"
 
     agent = Double_Q_Learning(
         num_of_action=num_of_action,
@@ -129,14 +134,15 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         discount_factor=discount
     )
 
-    # Store data to plot graph
-    training_data = {
-        "episode_rewards": [],
-        "moving_avg_rewards": [],
-        "steps_per_episode": [],
-        "epsilon_values": []
-    }
     moving_avg_window = deque(maxlen=100)  # For smoothing rewards
+    moving_avg_window2 = deque(maxlen=100) # For smoothing step
+
+    # Start a new wandb run to track this script.
+    wandb.init(
+        # Set the wandb project where this run will be logged.
+        project="DRL_HW2_3",
+        name="Double_Q_learning_a_3_s_5"
+    )
 
     # reset environment
     obs, _ = env.reset()
@@ -172,41 +178,32 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
                     obs = next_obs
                     step += 1
 
-                
-                # Store episode reward and steps
-                training_data["episode_rewards"].append(cumulative_reward)
-                training_data["steps_per_episode"].append(step)
-                training_data["epsilon_values"].append(agent.epsilon)
-
                 # Compute moving average reward
                 moving_avg_window.append(cumulative_reward)
                 moving_avg_reward = sum(moving_avg_window) / len(moving_avg_window)
-                training_data["moving_avg_rewards"].append(moving_avg_reward)
+
+                moving_avg_window2.append(step)
+                moving_avg_step = sum(moving_avg_window2) / len(moving_avg_window2)
+                
+                wandb.log({
+                    "avg_reward" : moving_avg_reward,
+                    "reward" : cumulative_reward,
+                    "epsilon" : agent.epsilon,
+                    "avg_step" : moving_avg_step,
+                    "step" : step,
+                })
                 
                 sum_reward += cumulative_reward
                 if episode % 100 == 0:
                     print("avg_score: ", sum_reward / 100.0)
                     sum_reward = 0
                     print(agent.epsilon)
-                agent.decay_epsilon()
-            
-            # Save Q-Learning agent
-            Algorithm_name = "Double_Q_learning"
-            q_value_file = "name.json"
-            full_path = os.path.join("q_value", Algorithm_name)
-            agent.save_q_value(full_path, q_value_file)
 
-            #save store data to yaml file
-            version = 1
-            while True:
-                filename = f"training_results_{version}.yaml"
-                file_path = os.path.join("Data", "Double_Q_learning", filename)
-                
-                if not os.path.exists(file_path):  # If the file does not exist, break
-                    break
-                version += 1  # Otherwise, increment and try again
-            with open(file_path, "w") as yaml_file:
-                yaml.dump(training_data, yaml_file, default_flow_style=False)
+                    # Save Q-Learning agent
+                    q_value_file = f"{Algorithm_name}_{episode}_{num_of_action}_{action_range[1]}_{discretize_state_weight[0]}_{discretize_state_weight[1]}.json"
+                    full_path = os.path.join(f"q_value/{task_name}", Algorithm_name, "Part3/a_3_s_5")
+                    agent.save_q_value(full_path, q_value_file)
+                agent.decay_epsilon()
             
         if args_cli.video:
             timestep += 1
@@ -219,6 +216,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # ==================================================================== #
 
     # close the simulator
+    wandb.finish()
     env.close()
 
 if __name__ == "__main__":

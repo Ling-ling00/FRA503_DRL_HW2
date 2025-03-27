@@ -49,3 +49,4 @@ class Q_Learning(BaseAlgorithm):
         q_value = self.q_values[state][action]
         max_next_q_value = np.max(self.q_values[next_state]) if next_state is not None else 0
         self.q_values[state][action] = q_value + self.lr*(reward + (self.discount_factor * max_next_q_value) - q_value)
+        self.n_values[state][action] += 1
