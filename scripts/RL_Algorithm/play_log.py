@@ -11,6 +11,9 @@ from omni.isaac.lab.app import AppLauncher
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from RL_Algorithm.Algorithm.Double_Q_Learning import Double_Q_Learning
+from RL_Algorithm.Algorithm.Q_Learning import Q_Learning
+from RL_Algorithm.Algorithm.SARSA import SARSA
+from RL_Algorithm.Algorithm.MC import MC
 from tqdm import tqdm
 
 # add argparse arguments
@@ -44,6 +47,7 @@ simulation_app = app_launcher.app
 import gymnasium as gym
 import torch
 from datetime import datetime
+import json
 
 from omni.isaac.lab.envs import (
     DirectMARLEnv,
@@ -84,6 +88,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # ==================================================================== #
     # ========================= Can be modified ========================== #
 
+    Algorithm_name = "MC"
+
     num_of_action = 11
     action_range = [-15, 15]  # [min, max]
     discretize_state_weight = [1, 21, 21, 1]  # [pose_cart:int, pose_pole:int, vel_cart:int, vel_pole:int]
@@ -94,26 +100,67 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     final_epsilon = 0
     discount = 0.7
 
-    agent = Double_Q_Learning(
-        num_of_action=num_of_action,
-        action_range=action_range,
-        discretize_state_weight=discretize_state_weight,
-        learning_rate=learning_rate,
-        initial_epsilon=start_epsilon,
-        epsilon_decay=epsilon_decay,
-        final_epsilon=final_epsilon,
-        discount_factor=discount
-    )
+    if Algorithm_name == "Double_Q_learning":
+        agent = Double_Q_Learning(
+            num_of_action=num_of_action,
+            action_range=action_range,
+            discretize_state_weight=discretize_state_weight,
+            learning_rate=learning_rate,
+            initial_epsilon=start_epsilon,
+            epsilon_decay=epsilon_decay,
+            final_epsilon=final_epsilon,
+            discount_factor=discount
+        )
+    elif Algorithm_name == "Q_learning":
+        agent = Q_Learning(
+            num_of_action=num_of_action,
+            action_range=action_range,
+            discretize_state_weight=discretize_state_weight,
+            learning_rate=learning_rate,
+            initial_epsilon=start_epsilon,
+            epsilon_decay=epsilon_decay,
+            final_epsilon=final_epsilon,
+            discount_factor=discount
+        )
+    elif Algorithm_name == "SARSA":
+        agent = SARSA(
+            num_of_action=num_of_action,
+            action_range=action_range,
+            discretize_state_weight=discretize_state_weight,
+            learning_rate=learning_rate,
+            initial_epsilon=start_epsilon,
+            epsilon_decay=epsilon_decay,
+            final_epsilon=final_epsilon,
+            discount_factor=discount
+        )
+    elif Algorithm_name == "MC":
+        agent = MC(
+            num_of_action=num_of_action,
+            action_range=action_range,
+            discretize_state_weight=discretize_state_weight,
+            learning_rate=learning_rate,
+            initial_epsilon=start_epsilon,
+            epsilon_decay=epsilon_decay,
+            final_epsilon=final_epsilon,
+            discount_factor=discount
+        )
 
     task_name = str(args_cli.task).split('-')[0]  # Stabilize, SwingUp
-    Algorithm_name = "Double_Q_learning"
-    q_value_file = "Part3/a_11_s_21/Double_Q_learning_4900_11_15_1_21.json"
+    q_value_file = f"Part3/a_{num_of_action}_s_{discretize_state_weight[1]}/{Algorithm_name}_4900_{num_of_action}_15_1_{discretize_state_weight[1]}.json"
     full_path = os.path.join(f"q_value/{task_name}", Algorithm_name)
     agent.load_q_value(full_path, q_value_file)
 
     # reset environment
     obs, _ = env.reset()
     timestep = 0
+
+    # === CONFIG ===
+    log_observations = True
+    max_timesteps = 300  # Stop logging after this many steps
+    obs_log = []
+    timestep = 0
+    stop_collecting = False
+
     # simulate environment
     while simulation_app.is_running():
         # run everything in inference mode
@@ -123,6 +170,10 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
                 obs, _ = env.reset()
                 done = False
+                if stop_collecting:
+                    env.close()
+                    simulation_app.close()
+                    break  # break inner loop
 
                 while not done:
                     # agent stepping
@@ -133,13 +184,32 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
                     done = terminated or truncated
                     obs = next_obs
+
+                    if log_observations:
+                        obs_log.append({
+                            "timestep": timestep,
+                            "cart_position": float(next_obs['policy'][0, 0].item()),
+                            "cart_velocity": float(next_obs['policy'][0, 1].item()),
+                            "pole_angle": float(next_obs['policy'][0, 2].item()),
+                            "pole_angular_velocity": float(next_obs['policy'][0, 3].item()),
+                            "action": float(action[0]) if isinstance(action, (list, tuple, np.ndarray)) else float(action)
+                        })
         
 
-        if args_cli.video:
-            timestep += 1
-            # Exit the play loop after recording one video
-            if timestep == args_cli.video_length:
-                break
+                
+                    timestep += 1
+                    # Exit the play loop after recording one video
+                    if timestep >= 1000:
+                        logs_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../logs"))
+                        os.makedirs(logs_dir, exist_ok=True)
+                        log_file = os.path.join(logs_dir, f"log_{Algorithm_name}_a_{num_of_action}_s_{discretize_state_weight[1]}.json")
+
+                        with open(log_file, "w") as f:
+                            json.dump(obs_log, f, indent=2)
+
+                        print(f"\n✅ Saved {len(obs_log)} observations to: {log_file}")
+                        stop_collecting = True
+                        break
 
     # ==================================================================== #
 
